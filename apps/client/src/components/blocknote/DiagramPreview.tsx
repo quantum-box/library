@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { useI18n } from '../../i18n'
 
 import { diagramLanguage } from './diagramLanguage'
-import { cachedDiagram, isAbortError, renderDiagram, withDiagramId } from './diagramRenderer'
+import { cachedDiagram, renderDiagram, withDiagramId } from './diagramRenderer'
 
 /** Start rendering a little before a diagram scrolls into view. */
 const NEAR_VIEWPORT = '600px 0px'
@@ -25,16 +25,21 @@ export function DiagramPreview({
   const container = useRef<HTMLDivElement>(null)
   // The last diagram this preview rendered, kept on screen while an edit
   // renders its replacement.
-  const [shown, setShown] = useState<{ kind: string; svg: string } | null>(null)
+  const [shown, setShown] = useState<{ kind: string; key: string; svg: string } | null>(null)
   const [failedKey, setFailedKey] = useState<string | null>(null)
   // Mermaid scopes styles and arrowhead markers by element id; this one is
   // unique to the preview even when the same diagram is on the page twice.
   const diagramId = `library-diagram-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   // A rebuilt block shows what it showed before at once, without a
   // "loading" flash or a layout jump.
+  const key = `${kind}\n${source}`
   const cached = kind && source.trim() ? cachedDiagram(kind, source) : undefined
+  // Hold on to what is on screen: the shared cache may evict it later.
+  if (kind && cached !== undefined && (shown?.key !== key || shown.svg !== cached)) {
+    setShown({ kind, key, svg: cached })
+  }
   const svg = cached ?? (shown && shown.kind === kind ? shown.svg : '')
-  const failed = cached === undefined && failedKey === `${kind}\n${source}`
+  const failed = cached === undefined && failedKey === key
   const [sourceVisible, setSourceVisible] = useState(defaultSourceVisible)
   const [nearViewport, setNearViewport] = useState(() => typeof IntersectionObserver === 'undefined')
   // The source this preview was mounted with renders without the edit debounce.
@@ -62,9 +67,11 @@ export function DiagramPreview({
     const controller = new AbortController()
     const render = () => {
       renderDiagram(kind, source, controller.signal).then(
-        (result) => { if (!controller.signal.aborted) setShown({ kind, svg: result }) },
-        (error: unknown) => {
-          if (controller.signal.aborted || isAbortError(error)) return
+        (result) => { if (!controller.signal.aborted) setShown({ kind, key: `${kind}\n${source}`, svg: result }) },
+        () => {
+          // Only this preview leaving is not a failure; a render that timed
+          // out or was dropped must not stay "loading".
+          if (controller.signal.aborted) return
           setShown(null)
           setFailedKey(`${kind}\n${source}`)
         },

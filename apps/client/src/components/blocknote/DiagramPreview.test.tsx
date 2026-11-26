@@ -2,7 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { DiagramPreview } from './DiagramPreview'
 import { diagramLanguage } from './diagramLanguage'
-import { DIAGRAM_RENDER_TIMEOUT_MS, resetDiagramRendererForTests } from './diagramRenderer'
+import { DIAGRAM_RENDER_TIMEOUT_MS, renderDiagram, resetDiagramRendererForTests } from './diagramRenderer'
 
 const mocks = vi.hoisted(() => ({ render: vi.fn() }))
 vi.mock('mermaid', () => ({ default: { initialize: vi.fn(), render: mocks.render } }))
@@ -112,3 +112,27 @@ it('gives each preview its own element ids for the same diagram', async () => {
   expect(mocks.render).toHaveBeenCalledTimes(1)
 })
 
+
+it('reports a PlantUML request that times out as failed', async () => {
+  vi.useFakeTimers()
+  vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => new Promise((_, reject) => {
+    init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+  })))
+  const { container } = render(<DiagramPreview language="plantuml" source="Alice -> Bob" />)
+  await act(() => vi.advanceTimersByTimeAsync(DIAGRAM_RENDER_TIMEOUT_MS + 100))
+  expect(container.querySelector('[role="status"]')?.textContent).toBe('editor.diagramFailed')
+})
+
+it('keeps a diagram on screen after the shared cache evicts it', async () => {
+  mocks.render.mockImplementation(async (id: string) => ({ svg: `<svg id="${id}"><text>Kept</text></svg>` }))
+  const first = render(<DiagramPreview language="mermaid" source="graph TD; Kept" />)
+  await waitFor(() => expect(first.container.querySelector('svg text')?.textContent).toBe('Kept'))
+  first.unmount()
+  // A rebuilt block, shown straight from the cache.
+  const view = render(<DiagramPreview language="mermaid" source="graph TD; Kept" />)
+  expect(view.container.querySelector('svg text')?.textContent).toBe('Kept')
+  const signal = new AbortController().signal
+  for (let i = 0; i < 70; i++) await renderDiagram('mermaid', `graph TD; Other${i}`, signal)
+  view.rerender(<DiagramPreview language="mermaid" source="graph TD; Kept" />)
+  expect(view.container.querySelector('svg text')?.textContent).toBe('Kept')
+})

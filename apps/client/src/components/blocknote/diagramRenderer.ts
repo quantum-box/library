@@ -155,6 +155,10 @@ async function renderPlantUml(source: string): Promise<string> {
     })
     if (!response.ok) throw new Error(`Kroki: ${response.status}`)
     return await response.text()
+  } catch (error) {
+    // Our own timeout, not a preview leaving: report it as a failure.
+    if (controller.signal.aborted) throw new Error('Diagram render timed out')
+    throw error
   } finally {
     clearTimeout(timer)
   }
@@ -175,10 +179,6 @@ function yieldToMain() {
 
 function abortError() {
   return new DOMException('Diagram preview left', 'AbortError')
-}
-
-export function isAbortError(error: unknown) {
-  return error instanceof DOMException && error.name === 'AbortError'
 }
 
 /** Test seam: forget every result and render. */
