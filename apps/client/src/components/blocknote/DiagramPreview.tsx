@@ -1,12 +1,13 @@
-import { useEffect, useId, useState } from 'react'
-import DOMPurify from 'dompurify'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useI18n } from '../../i18n'
 
 import { diagramLanguage } from './diagramLanguage'
+import { cachedDiagram, renderDiagram, withDiagramId } from './diagramRenderer'
 
-// Mermaid has global configuration and a shared rendering queue. Keep initialization
-// and rendering together so concurrent blocks cannot change each other's theme.
-let renderQueue = Promise.resolve()
+/** Start rendering a little before a diagram scrolls into view. */
+const NEAR_VIEWPORT = '600px 0px'
+/** Avoid a request/render on every keystroke. */
+const EDIT_DEBOUNCE_MS = 350
 
 export function DiagramPreview({
   language,
@@ -20,50 +21,74 @@ export function DiagramPreview({
   onSourceVisibilityChange?: (visible: boolean) => void
 }) {
   const { t } = useI18n()
-  const id = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   const kind = diagramLanguage(language)
-  const [svg, setSvg] = useState('')
-  const [failed, setFailed] = useState(false)
+  const container = useRef<HTMLDivElement>(null)
+  // The last diagram this preview rendered, kept on screen while an edit
+  // renders its replacement.
+  const [shown, setShown] = useState<{ kind: string; key: string; svg: string } | null>(null)
+  const [failedKey, setFailedKey] = useState<string | null>(null)
+  // Mermaid scopes styles and arrowhead markers by element id; this one is
+  // unique to the preview even when the same diagram is on the page twice.
+  const diagramId = `library-diagram-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+  // A rebuilt block shows what it showed before at once, without a
+  // "loading" flash or a layout jump.
+  const key = `${kind}\n${source}`
+  const cached = kind && source.trim() ? cachedDiagram(kind, source) : undefined
+  // Hold on to what is on screen: the shared cache may evict it later.
+  if (kind && cached !== undefined && (shown?.key !== key || shown.svg !== cached)) {
+    setShown({ kind, key, svg: cached })
+  }
+  const svg = cached ?? (shown && shown.kind === kind ? shown.svg : '')
+  const failed = cached === undefined && failedKey === key
   const [sourceVisible, setSourceVisible] = useState(defaultSourceVisible)
+  const [nearViewport, setNearViewport] = useState(() => typeof IntersectionObserver === 'undefined')
+  // The source this preview was mounted with renders without the edit debounce.
+  const mountedSource = useRef(source)
 
   useEffect(() => {
-    const controller = new AbortController()
-    setSvg('')
-    setFailed(false)
-    if (!kind || !source.trim()) return () => controller.abort()
-    // Avoid a request/render on every keystroke.
-    const timer = window.setTimeout(() => {
-      const render = async () => {
-        try {
-          let result: string
-          if (kind === 'mermaid') {
-            const mermaid = (await import('mermaid')).default
-            if (controller.signal.aborted) return
-            mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true, htmlLabels: false })
-            result = (await mermaid.render(`library-diagram-${id}`, source)).svg
-          } else {
-            const base = (import.meta.env.VITE_KROKI_BASE_URL || 'https://kroki.io').replace(/\/+$/, '')
-            const response = await fetch(`${base}/plantuml/svg`, {
-              method: 'POST', headers: { 'Content-Type': 'text/plain' },
-              body: source, signal: controller.signal,
-            })
-            if (!response.ok) throw new Error(`Kroki: ${response.status}`)
-            result = await response.text()
-          }
-          if (!controller.signal.aborted) setSvg(DOMPurify.sanitize(result, { USE_PROFILES: { svg: true, svgFilters: true } }))
-        } catch {
-          if (!controller.signal.aborted) setFailed(true)
-        }
+    if (nearViewport) return
+    const element = container.current
+    if (!element) return
+    // Phones cannot afford to render every diagram of a long page at once.
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setNearViewport(true)
+        observer.disconnect()
       }
-      if (kind === 'mermaid') renderQueue = renderQueue.then(render, render)
-      else void render()
-    }, 350)
+    }, { rootMargin: NEAR_VIEWPORT })
+    observer.observe(element)
+    return () => observer.disconnect()
+    // `kind` decides whether the container exists at all.
+  }, [kind, nearViewport])
+
+  useEffect(() => {
+    if (!kind || !source.trim() || !nearViewport) return
+    if (cachedDiagram(kind, source) !== undefined) return
+    const controller = new AbortController()
+    const render = () => {
+      renderDiagram(kind, source, controller.signal).then(
+        (result) => { if (!controller.signal.aborted) setShown({ kind, key: `${kind}\n${source}`, svg: result }) },
+        () => {
+          // Only this preview leaving is not a failure; a render that timed
+          // out or was dropped must not stay "loading".
+          if (controller.signal.aborted) return
+          setShown(null)
+          setFailedKey(`${kind}\n${source}`)
+        },
+      )
+    }
+    if (source === mountedSource.current) {
+      render()
+      return () => controller.abort()
+    }
+    // While editing, keep the previous diagram until the new one is ready.
+    const timer = window.setTimeout(render, EDIT_DEBOUNCE_MS)
     return () => { window.clearTimeout(timer); controller.abort() }
-  }, [id, kind, source])
+  }, [kind, nearViewport, source])
 
   if (!kind) return null
   return (
-    <div contentEditable={false} className="library-code-diagram overflow-auto rounded border border-border bg-white p-4 text-black">
+    <div ref={container} contentEditable={false} className="library-code-diagram overflow-auto rounded border border-border bg-white p-4 text-black">
       {onSourceVisibilityChange && (
         <div className="mb-2 flex justify-end">
           <button
@@ -82,7 +107,7 @@ export function DiagramPreview({
       )}
       {source.trim() && (
         failed ? <p role="status">{t('editor.diagramFailed')}</p>
-          : svg ? <div dangerouslySetInnerHTML={{ __html: svg }} />
+          : svg ? <div dangerouslySetInnerHTML={{ __html: withDiagramId(svg, diagramId) }} />
             : <p role="status">{t('editor.diagramLoading')}</p>
       )}
     </div>
